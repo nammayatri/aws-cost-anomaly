@@ -1,84 +1,113 @@
-# Cost Anomaly Cron
+<div align="center">
 
-Daily AWS cost-anomaly report → Slack.
+# AWS Cost Anomaly Cron
 
-A Kubernetes CronJob that runs once a day, looks at yesterday's AWS bill broken down by service, flags services whose cost moved beyond your thresholds compared to the previous day **and** the same weekday last week, drills down by `USAGE_TYPE` (with actual usage quantity in GB / hours / requests, not just dollars), and posts a structured Slack message — a clean summary as the main message, with the per-service breakdown in a thread reply.
+**Daily AWS cost anomaly detection — straight to Slack.**
 
-If nothing crosses the thresholds in either direction, the cron stays silent for the day. No noise on quiet days.
+A small, opinionated Kubernetes CronJob that watches your AWS bill day by day, surfaces the services that moved meaningfully, drills down to the exact usage type responsible — and stays silent when nothing's wrong.
 
-## What you get in Slack
+<br/>
 
-**Main message** — date, total spend, vs day-before and vs same-day-last-week (with the baseline dollar amounts shown), and a one-line count of services that moved.
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python](https://img.shields.io/badge/python-3.12-blue.svg)
+![Platform](https://img.shields.io/badge/runs%20on-Kubernetes-326ce5.svg)
+![IAM](https://img.shields.io/badge/IAM-ce%3AGetCostAndUsage-orange.svg)
+![Slack](https://img.shields.io/badge/output-Slack-4A154B.svg)
 
-**Thread reply** — two sections: services that increased (orange/red) and services that decreased (green). Each card shows the cost delta with the actual comparison date, plus a few bullets naming the specific usage types responsible for the change with their before/after quantities.
+<br/>
 
-## How it works
+<img src="docs/flow.svg" alt="Pipeline animation" width="100%"/>
 
-```
-CronJob (default: 12:00 UTC)
-   └─ Python container
-        ├─ boto3 ce.get_cost_and_usage   (last 21 days, daily, GROUP BY SERVICE)
-        ├─ for each service: detect deltas vs T-1 and vs T-7
-        ├─ if any cross thresholds: second CE call per flagged service GROUP BY USAGE_TYPE
-        │      (with UsageQuantity, so we can show GB / requests / hours moved)
-        └─ slack_sdk.chat_postMessage → main + thread reply
-```
+</div>
 
-## Repo layout
+---
 
-```
-.
-├── main.py, fetch.py, detect.py, drilldown.py, slack.py, config.py
-├── requirements.txt
-├── Dockerfile
-├── config.example.json     # documents config.json shape, dummy values
-├── k8s/                    # public-friendly manifest templates with <PLACEHOLDERS>
-│   ├── cronjob.yaml
-│   └── secret.yaml
-└── prod/                   # gitignored — real values for your deployment
-    ├── cronjob.yaml
-    └── secret.yaml
-```
+## ✨ Why this exists
 
-`config.json` and `prod/` are gitignored. The committed `k8s/` manifests are placeholders only — copy them to `prod/` and fill in real values, then apply from `prod/`.
+AWS billing surprises usually arrive on the **first of next month** — by then the leak has been running for weeks. This cron flips that:
 
-## Configuration
+- **Yesterday's bill, this morning** — 24h lag, never more
+- **Both seasonalities** — flags spikes vs the previous day **and** vs the same weekday last week, so weekend rhythms don't trigger false alarms
+- **Names the culprit** — not just *"EC2-Other went up"*, but *"NAT-Gateway data transfer went from 0 GB to 47 GB"*
+- **Silent unless something matters** — no daily noise post; if every service stayed within thresholds, the cron exits without messaging
 
-Two sources, merged with this precedence: **env vars > `config.json` > defaults**. Same code path for local and prod.
+## 📥 What lands in Slack
 
-| Key (json) | Env var | Default | Meaning |
-|---|---|---|---|
-| `aws_profile` | `AWS_PROFILE` | — | Local only. In-cluster, IRSA/Workload Identity is used instead. |
-| `aws_region` | `AWS_REGION` | `ap-south-1` | Region for Cost Explorer client. |
-| `slack_bot_token` | `SLACK_BOT_TOKEN` | — | Bot token (`xoxb-…`) with `chat:write` and `chat:write.public`. **Required.** |
-| `slack_channel_id` | `SLACK_CHANNEL_ID` | — | Channel ID (prefer ID over `#name` so renames don't break things). **Required.** |
-| `mention` | `MENTION` | empty | `here` / `channel` / a user ID (`U…`) / a usergroup ID (`S…`). Empty = no mention. |
-| `increase_pct_threshold` | `INCREASE_PCT_THRESHOLD` | `10` | A service must move > this percent **up** (vs T-1 or T-7) to be flagged. |
-| `decrease_pct_threshold` | `DECREASE_PCT_THRESHOLD` | `5` | And > this percent **down** to be flagged on the decrease side. |
-| `abs_threshold` | `ABS_THRESHOLD` | `1` | Plus an absolute-dollar guard so penny moves don't fire. |
-| `noise_floor` | `NOISE_FLOOR` | `1` | Skip a service entirely if its max value across the three days is below this. |
-| `lookback_days` | `LOOKBACK_DAYS` | `21` | How much history to fetch (must be ≥ 8). |
-| `top_usage_types` | `TOP_USAGE_TYPES` | `3` | How many usage types to show in the drill-down per flagged service. |
+<table>
+<tr>
+<td valign="top" width="50%">
 
-## Local run
+### Main message
+- 📅 Date, day of week
+- 💰 Total spend, with **both** baselines shown in dollars
+- 📈 / 📉 One-line tally of services that moved
+- 🎨 Colored side-bar: 🟥 if total is up, 🟩 if down, ⬜ if flat
+- 🔔 Optional `@here` / `@channel` / user / usergroup mention
+
+</td>
+<td valign="top" width="50%">
+
+### Thread reply
+- 🟥 **Services that increased** — red attachments
+- 🟩 **Services that decreased** — green attachments
+- Each card shows the actual comparison dates **and** baseline dollars
+- Below each card, bullet list of the **usage types** that drove the change with **GB / hours / requests** (not just dollars)
+
+</td>
+</tr>
+</table>
+
+## 🧠 How detection works
+
+For each AWS service, for **yesterday (T-1)**:
+
+| Check | Logic | Default |
+|---|---|---|
+| **Day-over-day** | Cost vs T-2 | flagged if up >10% **and** moved more than $1 |
+| **Week-over-week** | Cost vs T-8 (same weekday) | flagged if up >10% **and** moved more than $1 |
+| **Decrease** | Same logic, opposite direction | flagged if down >10% **and** moved more than $1 |
+| **Noise floor** | `max(today, prev, last_week)` | services below $1 are ignored entirely |
+
+A service appears in the report only if **at least one** check trips. If neither list has anything, the cron logs `No threshold crossings — skipping Slack post.` and exits.
+
+## 🚀 Quick start (local)
 
 ```bash
+git clone https://github.com/nammayatri/aws-cost-anomaly
+cd aws-cost-anomaly
+
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 cp config.example.json config.json
-# edit config.json with your slack token + channel id + aws_profile
+# edit config.json: slack_bot_token, slack_channel_id, aws_profile
 
-python main.py --dry-run                       # prints Slack payload to stdout
-python main.py --csv /path/to/cost.csv --date 2026-05-15 --dry-run   # backtest against a CSV
-python main.py                                 # post live
+python main.py --dry-run            # print Slack payload, don't send
+python main.py                      # post live
+python main.py --csv ./bill.csv --date 2026-05-15 --dry-run  # backtest
 ```
 
-`python main.py --csv …` skips the AWS API entirely — useful if you only have an exported CSV and want to see what the report would look like.
+## ⚙️ Configuration
 
-## AWS IAM
+All settings can come from **either** environment variables **or** `config.json`. Env wins. Same code path runs in dev and in-cluster.
 
-The pod's IAM role (via IRSA on EKS, or Workload Identity on GKE) only needs:
+| Key (json) | Env var | Default | Notes |
+|---|---|---|---|
+| `slack_bot_token` | `SLACK_BOT_TOKEN` | — | **Required.** `xoxb-…` with `chat:write` |
+| `slack_channel_id` | `SLACK_CHANNEL_ID` | — | **Required.** Prefer ID over `#name` (renames don't break things) |
+| `aws_profile` | `AWS_PROFILE` | — | Local only; IRSA/WI is used in-cluster |
+| `aws_region` | `AWS_REGION` | `ap-south-1` | Region for the Cost Explorer client |
+| `mention` | `MENTION` | empty | `here`, `channel`, a user ID (`U…`), or a usergroup ID (`S…`) |
+| `increase_pct_threshold` | `INCREASE_PCT_THRESHOLD` | `10` | Up-spike threshold (percent) |
+| `decrease_pct_threshold` | `DECREASE_PCT_THRESHOLD` | `10` | Down-drop threshold (percent) |
+| `abs_threshold` | `ABS_THRESHOLD` | `1` | Absolute-dollar guard so pennies don't fire |
+| `noise_floor` | `NOISE_FLOOR` | `1` | Skip services entirely below this |
+| `lookback_days` | `LOOKBACK_DAYS` | `21` | Days of history to pull (≥ 8) |
+| `top_usage_types` | `TOP_USAGE_TYPES` | `3` | How many drill-down lines per service |
+
+## 🔐 IAM
+
+Minimal — read-only.
 
 ```json
 {
@@ -91,50 +120,84 @@ The pod's IAM role (via IRSA on EKS, or Workload Identity on GKE) only needs:
 }
 ```
 
-Cost Explorer doesn't support resource-level ARNs, so `"Resource": "*"` is unavoidable, but the action itself is read-only.
+Cost Explorer doesn't support resource-level ARNs, so `"Resource": "*"` is unavoidable — but the verb is read-only and only billing data leaves AWS.
 
-If you already have an IAM role for cost/monitoring work, you can reuse its service account directly — no need to provision a second role.
+> Already running a monitoring/observability service with `ce:*` access? Reuse its service account — `serviceAccountName: <yours>` and you're done.
 
-## Deploy
+## 🚢 Deploy
 
-1. **Image** — build and push to your container registry of choice. Example for AWS ECR:
+```
+.
+├── k8s/                 # public-friendly manifests with <PLACEHOLDERS>
+└── prod/                # gitignored — your real values live here
+```
 
-   ```bash
-   aws ecr create-repository --repository-name cost-anomaly-cron --region <REGION>
+### 1) Push the image
 
-   docker buildx build --platform linux/amd64 -t cost-anomaly-cron:v1 .
-   docker tag cost-anomaly-cron:v1 <ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/cost-anomaly-cron:v1
+```bash
+aws ecr create-repository --repository-name cost-anomaly-cron --region <REGION>
 
-   aws ecr get-login-password --region <REGION> | docker login --username AWS --password-stdin <ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com
-   docker push <ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/cost-anomaly-cron:v1
-   ```
+docker buildx build --platform linux/amd64 -t cost-anomaly-cron:v1 . --load
+docker tag cost-anomaly-cron:v1 <ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/cost-anomaly-cron:v1
 
-2. **Prod manifests** — copy `k8s/*.yaml` into `prod/`, fill in real namespace, service account, image tag, channel ID, and bot token:
+aws ecr get-login-password --region <REGION> \
+  | docker login --username AWS --password-stdin <ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com
+docker push <ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/cost-anomaly-cron:v1
+```
 
-   ```bash
-   cp k8s/cronjob.yaml prod/cronjob.yaml
-   cp k8s/secret.yaml  prod/secret.yaml
-   # edit both with your real values
-   ```
+### 2) Fill in your real manifests
 
-3. **Apply**:
+```bash
+cp k8s/cronjob.yaml prod/cronjob.yaml
+cp k8s/secret.yaml  prod/secret.yaml
+# edit both: namespace, serviceAccountName, image, channel ID, bot token
+```
 
-   ```bash
-   kubectl apply -f prod/secret.yaml
-   kubectl apply -f prod/cronjob.yaml
-   ```
+### 3) Apply
 
-4. **Smoke-test**:
+```bash
+kubectl apply -f prod/secret.yaml
+kubectl apply -f prod/cronjob.yaml
+```
 
-   ```bash
-   kubectl -n <NS> create job --from=cronjob/cost-anomaly-cron cost-anomaly-test-1
-   kubectl -n <NS> logs -f job/cost-anomaly-test-1
-   ```
+### 4) Smoke-test without waiting for the schedule
 
-   You should see a Slack post (or `No threshold crossings — skipping Slack post.` in the logs).
+```bash
+kubectl -n <NS> create job --from=cronjob/cost-anomaly-cron cost-anomaly-test-1
+kubectl -n <NS> logs -f job/cost-anomaly-test-1
+```
 
-5. **Tune** thresholds after a few days based on signal-to-noise.
+Look for either a Slack post or `No threshold crossings — skipping Slack post.` in the logs.
 
-## Schedule
+## 🕐 When does it run?
 
-Default `0 12 * * *` UTC. Pick a time when yesterday's billing data has fully settled in Cost Explorer — usually 12:00 UTC is safe. If you run earlier, you may see partial numbers and the cron may flag false anomalies.
+Default: `0 12 * * *` UTC. That's chosen because AWS Cost Explorer typically finalizes the previous day's billing data by **12:00 UTC**. Earlier than that and you risk reporting on partial numbers, which causes false anomaly alerts.
+
+## 🧪 Backtesting
+
+Got a CSV export from AWS Cost Explorer? Aim the detector at it without touching AWS:
+
+```bash
+python main.py --csv ~/Downloads/costs.csv --date 2026-05-15 --dry-run
+```
+
+Useful for tuning thresholds against your historical noise floor before you point it at live data.
+
+## 🛠️ Architecture
+
+| File | Role |
+|---|---|
+| `main.py` | Entrypoint. Loads config, fetches, detects, drilldowns, posts. Skips post if nothing crosses. |
+| `fetch.py` | Two `ce:GetCostAndUsage` calls: by `SERVICE` (broad) and per-flagged `USAGE_TYPE` (deep). Carries `UsageQuantity` + unit. |
+| `detect.py` | Pure-function anomaly detection. Returns `(increases, decreases, summary)`. |
+| `drilldown.py` | Per-flagged-service usage-type ranker. Both dollar and quantity deltas. |
+| `slack.py` | Block Kit formatting + `chat.postMessage`. Main message + threaded breakdown. |
+| `config.py` | Env-overrides-json loader. Same code path local + prod. |
+
+## 🤝 Contributing
+
+PRs welcome. The codebase is intentionally small and dependency-light. If you add a feature, please keep the **zero-noise-on-quiet-days** contract intact — over time it's the most important property.
+
+## 📄 License
+
+MIT.

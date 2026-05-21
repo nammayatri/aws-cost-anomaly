@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 360" width="980" height="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="cronGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="ceGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#ea580c"/>
+    </linearGradient>
+    <linearGradient id="detectGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#7e22ce"/>
+    </linearGradient>
+    <linearGradient id="drillGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#be185d"/>
+    </linearGradient>
+    <linearGradient id="slackGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="980" height="360" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- Title -->
+  <text x="490" y="36" text-anchor="middle" fill="#f1f5f9" font-size="18" font-weight="700" letter-spacing="0.5">
+    Daily AWS Cost Anomaly Pipeline
+  </text>
+  <text x="490" y="56" text-anchor="middle" fill="#94a3b8" font-size="12">
+    Runs once a day · stays silent unless something crosses thresholds
+  </text>
+
+  <!-- Stage 1: CronJob -->
+  <g transform="translate(40, 130)">
+    <rect width="140" height="100" rx="10" fill="url(#cronGrad)" filter="url(#glow)"/>
+    <text x="70" y="40" text-anchor="middle" fill="white" font-size="13" font-weight="600">⏰ CronJob</text>
+    <text x="70" y="62" text-anchor="middle" fill="#e0f2fe" font-size="11">12:00 UTC</text>
+    <text x="70" y="80" text-anchor="middle" fill="#e0f2fe" font-size="11">17:30 IST</text>
+  </g>
+
+  <!-- Stage 2: Cost Explorer -->
+  <g transform="translate(220, 130)">
+    <rect width="140" height="100" rx="10" fill="url(#ceGrad)" filter="url(#glow)"/>
+    <text x="70" y="38" text-anchor="middle" fill="white" font-size="13" font-weight="600">📊 Cost Explorer</text>
+    <text x="70" y="60" text-anchor="middle" fill="#fed7aa" font-size="11">21 days · daily</text>
+    <text x="70" y="78" text-anchor="middle" fill="#fed7aa" font-size="11">group by SERVICE</text>
+  </g>
+
+  <!-- Stage 3: Detect -->
+  <g transform="translate(400, 130)">
+    <rect width="140" height="100" rx="10" fill="url(#detectGrad)" filter="url(#glow)"/>
+    <text x="70" y="38" text-anchor="middle" fill="white" font-size="13" font-weight="600">🔍 Detect</text>
+    <text x="70" y="60" text-anchor="middle" fill="#e9d5ff" font-size="11">vs yesterday</text>
+    <text x="70" y="78" text-anchor="middle" fill="#e9d5ff" font-size="11">vs last week</text>
+  </g>
+
+  <!-- Stage 4: Drilldown -->
+  <g transform="translate(580, 130)">
+    <rect width="140" height="100" rx="10" fill="url(#drillGrad)" filter="url(#glow)"/>
+    <text x="70" y="38" text-anchor="middle" fill="white" font-size="13" font-weight="600">🔬 Drilldown</text>
+    <text x="70" y="60" text-anchor="middle" fill="#fbcfe8" font-size="11">by usage type</text>
+    <text x="70" y="78" text-anchor="middle" fill="#fbcfe8" font-size="11">+ quantity (GB/Hrs)</text>
+  </g>
+
+  <!-- Stage 5: Slack -->
+  <g transform="translate(760, 130)">
+    <rect width="180" height="100" rx="10" fill="url(#slackGrad)" filter="url(#glow)"/>
+    <text x="90" y="38" text-anchor="middle" fill="white" font-size="13" font-weight="600">💬 Slack</text>
+    <text x="90" y="60" text-anchor="middle" fill="#a7f3d0" font-size="11">main + thread</text>
+    <text x="90" y="78" text-anchor="middle" fill="#a7f3d0" font-size="11">red ↑  ·  green ↓</text>
+  </g>
+
+  <!-- Connector lines -->
+  <line x1="180" y1="180" x2="220" y2="180" stroke="#475569" stroke-width="2"/>
+  <line x1="360" y1="180" x2="400" y2="180" stroke="#475569" stroke-width="2"/>
+  <line x1="540" y1="180" x2="580" y2="180" stroke="#475569" stroke-width="2"/>
+  <line x1="720" y1="180" x2="760" y2="180" stroke="#475569" stroke-width="2"/>
+
+  <!-- Animated traveling packet representing data flow -->
+  <circle r="6" fill="#fbbf24" filter="url(#glow)">
+    <animateMotion dur="6s" repeatCount="indefinite" rotate="auto">
+      <mpath href="#flowPath"/>
+    </animateMotion>
+    <animate attributeName="opacity" values="0;1;1;1;1;0" keyTimes="0;0.05;0.9;0.95;0.97;1" dur="6s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="5" fill="#22d3ee" filter="url(#glow)">
+    <animateMotion dur="6s" begin="2s" repeatCount="indefinite" rotate="auto">
+      <mpath href="#flowPath"/>
+    </animateMotion>
+    <animate attributeName="opacity" values="0;1;1;1;1;0" keyTimes="0;0.05;0.9;0.95;0.97;1" dur="6s" begin="2s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="5" fill="#f472b6" filter="url(#glow)">
+    <animateMotion dur="6s" begin="4s" repeatCount="indefinite" rotate="auto">
+      <mpath href="#flowPath"/>
+    </animateMotion>
+    <animate attributeName="opacity" values="0;1;1;1;1;0" keyTimes="0;0.05;0.9;0.95;0.97;1" dur="6s" begin="4s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Invisible path for motion -->
+  <path id="flowPath" d="M 110,180 L 850,180" fill="none" stroke="none"/>
+
+  <!-- Decision branch indicator -->
+  <g transform="translate(490, 260)">
+    <text x="0" y="0" text-anchor="middle" fill="#cbd5e1" font-size="11">
+      <tspan x="0" dy="0">if &gt; 10% up  OR  &gt; 10% down  &amp; &gt; $1 abs</tspan>
+      <tspan x="0" dy="18" fill="#fbbf24">→ post to Slack</tspan>
+      <tspan x="0" dy="18" fill="#94a3b8">else stay silent</tspan>
+    </text>
+  </g>
+
+  <!-- Footer hint -->
+  <text x="490" y="340" text-anchor="middle" fill="#64748b" font-size="10">
+    ce:GetCostAndUsage   ·   chat:write   ·   no inputs, no state
+  </text>
+</svg>
