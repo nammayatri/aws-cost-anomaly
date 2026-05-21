@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cost-anomaly-cron
+  namespace: <NAMESPACE>
+spec:
+  # 12:00 UTC. Time chosen so yesterday's Cost Explorer data has settled.
+  schedule: "0 12 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          # The service account must have an IAM role attached (IRSA on EKS, Workload Identity on GKE)
+          # with the action `ce:GetCostAndUsage`. See README for the minimal policy.
+          serviceAccountName: <SERVICE_ACCOUNT>
+          containers:
+            - name: cost-anomaly-cron
+              image: <YOUR_REGISTRY>/cost-anomaly-cron:<TAG>
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: AWS_REGION
+                  value: "<AWS_REGION>"
+                - name: INCREASE_PCT_THRESHOLD
+                  value: "10"
+                - name: DECREASE_PCT_THRESHOLD
+                  value: "5"
+                - name: ABS_THRESHOLD
+                  value: "1"
+                - name: NOISE_FLOOR
+                  value: "1"
+                - name: LOOKBACK_DAYS
+                  value: "21"
+                - name: TOP_USAGE_TYPES
+                  value: "3"
+                - name: MENTION
+                  value: ""   # set to "here", "channel", or a Slack user/group id to ping on every post
+              envFrom:
+                - secretRef:
+                    name: cost-anomaly-cron-secret
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"

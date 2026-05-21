@@ -1,0 +1,12 @@
+{
+  "aws_profile": "uat",
+  "aws_region": "ap-south-1",
+  "slack_bot_token": "xoxb-REPLACE-ME",
+  "slack_channel_id": "C0XXXXXXX",
+  "increase_pct_threshold": 10,
+  "decrease_pct_threshold": 5,
+  "abs_threshold": 1,
+  "noise_floor": 1,
+  "lookback_days": 21,
+  "top_usage_types": 3
+}
