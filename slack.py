@@ -243,8 +243,14 @@ def _terse_service_header(a: Anomaly, target: _date) -> str:
         f"+{_money(a.wow_abs)} ({_pct_abs(a.wow_pct)}) vs {_fmt_date(lw)}"
         if a.wow_abs > 0 else f"{_money(a.wow_abs)} vs {_fmt_date(lw)}"
     )
+    # Show the transition for whichever window actually triggered the flag, so the
+    # arrow direction matches the alert. If only WoW tripped, compare to last week.
+    if "DoD" in a.rules:
+        base_val, base_date = a.yesterday, prev
+    else:
+        base_val, base_date = a.last_week, lw
     return (
-        f"{sev} *{a.service}*  `{_money(a.yesterday)} → {_money(a.today)}`\n"
+        f"{sev} *{a.service}*  `{_money(base_val)} → {_money(a.today)}`  _(vs {_fmt_date(base_date)})_\n"
         f"{dod_part} · {wow_part}"
     )
 
@@ -295,16 +301,19 @@ def _terse_reason_lines(movers: list[dict], target: _date) -> list[str]:
         delta_cost = m["dod_abs"] if basis == "dod" else m["wow_abs"]
         qty_phrase = _qty_change_phrase(m, basis)
 
-        if m["yesterday"] == 0 and basis == "dod":
+        # Cost baseline must match the window that triggered: yesterday for DoD, last week for WoW.
+        base_cost = m["yesterday"] if basis == "dod" else m["last_week"]
+
+        if base_cost == 0 and m["today"] > 0:
             usage_today = _fmt_qty(m["qty_today"], m.get("unit", ""))
             lines.append(
                 f"• `{ut}` — *new charge* of {_money(m['today'])}; usage: {usage_today} "
-                f"(was $0 / 0 on {_fmt_date(prev)})"
+                f"(was $0 / 0 on {_fmt_date(baseline)})"
             )
         else:
             qty_part = f" ; usage: {qty_phrase}" if qty_phrase else ""
             lines.append(
-                f"• `{ut}` — cost {_money(m['yesterday'])} → *{_money(m['today'])}* "
+                f"• `{ut}` — cost {_money(base_cost)} → *{_money(m['today'])}* "
                 f"(+{_money(delta_cost)} vs {_fmt_date(baseline)}){qty_part}"
             )
     return lines
@@ -330,13 +339,13 @@ def _down_reason_lines(movers: list[dict], target: _date) -> list[str]:
     for m in downward:
         ut = m["usage_type"]
         if m["dod_abs"] < 0:
-            baseline, delta, qty_then, qty_now = prev, m["dod_abs"], m["qty_yesterday"], m["qty_today"]
+            baseline, delta, base_cost, qty_then, qty_now = prev, m["dod_abs"], m["yesterday"], m["qty_yesterday"], m["qty_today"]
         else:
-            baseline, delta, qty_then, qty_now = lw, m["wow_abs"], m["qty_last_week"], m["qty_today"]
+            baseline, delta, base_cost, qty_then, qty_now = lw, m["wow_abs"], m["last_week"], m["qty_last_week"], m["qty_today"]
         unit = m.get("unit", "")
         qty_part = f" ; usage: {_fmt_qty(qty_then, unit)} → {_fmt_qty(qty_now, unit)}" if (qty_then or qty_now) else ""
         lines.append(
-            f"• `{ut}` — cost {_money(m['yesterday'])} → *{_money(m['today'])}* "
+            f"• `{ut}` — cost {_money(base_cost)} → *{_money(m['today'])}* "
             f"({_money(delta)} vs {_fmt_date(baseline)}){qty_part}"
         )
     return lines

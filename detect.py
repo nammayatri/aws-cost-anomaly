@@ -74,6 +74,23 @@ def detect(df: pd.DataFrame, target: date, cfg: dict) -> tuple[list[Anomaly], li
         if wow_pct < -down_pct and wow_abs < -abs_th:
             down_rules.append("WoW")
 
+        # A service can trip both directions (e.g. up vs last week but down vs yesterday).
+        # Assign it to a single bucket — whichever side has the larger dollar move wins —
+        # so the same service never appears in both lists.
+        if up_rules and down_rules:
+            up_mag = max(
+                (dod_abs if "DoD" in up_rules else 0.0),
+                (wow_abs if "WoW" in up_rules else 0.0),
+            )
+            down_mag = max(
+                (-dod_abs if "DoD" in down_rules else 0.0),
+                (-wow_abs if "WoW" in down_rules else 0.0),
+            )
+            if up_mag >= down_mag:
+                down_rules = []
+            else:
+                up_rules = []
+
         if up_rules:
             increases.append(Anomaly(
                 service=svc, today=today_v, yesterday=prev_v, last_week=lw_v,
